@@ -6,13 +6,14 @@ import warnings
 import pycalphad.variables as v
 from pycalphad.core.halton import halton
 from pycalphad.core.constants import MIN_SITE_FRACTION
-from symengine import lambdify, Symbol
+from pycalphad.property_framework.units import Q_
+from symengine import Symbol
 import numpy as np
 import operator
 import functools
 import itertools
 import collections
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, KeysView
 
 
 def point_sample(comp_count, pdof=10):
@@ -88,12 +89,14 @@ def unpack_condition(tup):
         if len(tup) == 1:
             return [float(tup[0])]
         elif len(tup) == 2:
-            return np.arange(tup[0], tup[1], dtype=np.float_)
+            return np.arange(tup[0], tup[1], dtype=np.float64)
         elif len(tup) == 3:
-            return np.arange(tup[0], tup[1], tup[2], dtype=np.float_)
+            return np.arange(tup[0], tup[1], tup[2], dtype=np.float64)
         else:
             raise ValueError('Condition tuple is length {}'.format(len(tup)))
-    elif isinstance(tup, Iterable):
+    elif isinstance(tup, Q_):
+        return tup
+    elif isinstance(tup, Iterable) and np.ndim(tup) != 0:
         return [float(x) for x in tup]
     else:
         return [float(tup)]
@@ -101,12 +104,14 @@ def unpack_condition(tup):
 def unpack_phases(phases):
     "Convert a phases list/dict into a sorted list."
     active_phases = None
-    if isinstance(phases, (list, tuple, set)):
+    if isinstance(phases, (list, tuple, set, KeysView)):
         active_phases = sorted(phases)
     elif isinstance(phases, dict):
         active_phases = sorted(phases.keys())
     elif type(phases) is str:
         active_phases = [phases]
+    else:
+        raise ValueError(f'Cannot unpack phases into recognizable input. Got {phases} of type {type(phases)}')
     return active_phases
 
 def generate_dof(phase, active_comps):
@@ -147,7 +152,7 @@ def endmember_matrix(dof, vacancy_indices=None):
     >>> endmember_matrix([3,3,1], vacancy_indices=[[2], [2], [0]])
     """
     total_endmembers = functools.reduce(operator.mul, dof, 1)
-    res_matrix = np.empty((total_endmembers, sum(dof)), dtype=np.float_)
+    res_matrix = np.empty((total_endmembers, sum(dof)), dtype=np.float64)
     dof_arrays = [np.eye(d).tolist() for d in dof]
     row_idx = 0
     for row in itertools.product(*dof_arrays):
@@ -417,7 +422,7 @@ def get_state_variables(models=None, conds=None):
         for c in conds:
             # StateVariable instances are ok (e.g. P, T, N, V, S),
             # however, subclasses (X, Y, MU, NP) are not ok.
-            if type(c) is v.StateVariable:
+            if isinstance(c, (v.IndependentPotential, v.SystemMolesType)):
                 state_vars.add(c)
     return state_vars
 
